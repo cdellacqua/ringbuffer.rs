@@ -277,6 +277,7 @@ pub unsafe trait RingBuffer<T>:
     }
 
     /// Efficiently copy items from a slice to the ringbuffer.
+    ///
     /// # Panics
     /// Panics if the buffer length minus the offset is NOT equal to `source.len()`.
     ///
