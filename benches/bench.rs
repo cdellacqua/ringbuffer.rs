@@ -157,6 +157,44 @@ fn benchmark_copy_from_slice_vs_extend<T: RingBuffer<i32> + SetLen, F: Fn() -> T
     group.finish();
 }
 
+fn benchmark_extend_from_slice_vs_extend<T: RingBuffer<i32>, F: Fn() -> T>(
+    rb_size: usize,
+    rb_type: &str,
+    fn_name: &str,
+    c: &mut Criterion,
+    new: F,
+) {
+    let mut group = c.benchmark_group(format!("{fn_name}({rb_type}, {rb_size})"));
+    let input = vec![9; rb_size];
+    group.bench_function(format!("ExtendFromSlice({rb_type}; {rb_size})"), |b| {
+        let mut rb = new();
+        rb.fill(9);
+        // making sure the read/write pointers wrap around
+        for _ in 0..rb_size / 2 {
+            let _ = rb.dequeue();
+            let _ = rb.enqueue(6);
+        }
+        b.iter(|| {
+            rb.extend_from_slice(&input);
+            assert_eq!(input[input.len() / 2], 9);
+        })
+    });
+    group.bench_function(format!("ExtendFromIter({rb_type}; {rb_size})"), |b| {
+        let mut rb = new();
+        rb.fill(9);
+        // making sure the read/write pointers wrap around
+        for _ in 0..rb_size / 2 {
+            let _ = rb.dequeue();
+            let _ = rb.enqueue(9);
+        }
+        b.iter(|| {
+            rb.extend(input.iter().copied());
+            assert_eq!(input[input.len() / 2], 9);
+        })
+    });
+    group.finish();
+}
+
 macro_rules! generate_benches {
     (called, $c: tt, $rb: tt, $ty: tt, $fn: tt, $bmfunc: tt, $($i:tt),*) => {
         $(
@@ -422,6 +460,34 @@ fn criterion_benchmark(c: &mut Criterion) {
         i32,
         new,
         benchmark_copy_from_slice_vs_extend,
+        16,
+        1024,
+        4096,
+        8192,
+        1_000_000,
+        1_048_576
+    ];
+    generate_benches![
+        compare,
+        c,
+        AllocRingBuffer,
+        i32,
+        new,
+        benchmark_extend_from_slice_vs_extend,
+        16,
+        1024,
+        4096,
+        8192,
+        1_000_000,
+        1_048_576
+    ];
+    generate_benches![
+        compare_typed,
+        c,
+        ConstGenericRingBuffer,
+        i32,
+        new,
+        benchmark_extend_from_slice_vs_extend,
         16,
         1024,
         4096,

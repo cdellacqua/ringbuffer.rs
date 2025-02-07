@@ -296,6 +296,45 @@ pub unsafe trait RingBuffer<T>:
     {
         unsafe { Self::ptr_copy_from_slice(self, offset, src) }
     }
+
+    /// Efficiently extend the ringbuffer with the content of a slice.
+    ///
+    /// Note: the semantics of this method are the same as `.extend`,
+    /// thus the slice can be longer than the capacity of the ringbuffer.
+    ///
+    /// # Safety
+    /// ONLY SAFE WHEN self is a *mut to to an implementor of `RingBuffer`
+    unsafe fn ptr_extend_from_slice(rb: *mut Self, src: &[T])
+    where
+        T: Copy;
+
+    /// Efficiently extend the ringbuffer with the content of a slice.
+    ///
+    /// Note: the semantics of this method are the same as `.extend`,
+    /// thus the slice can be longer than the capacity of the ringbuffer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ringbuffer::AllocRingBuffer;
+    /// use crate::ringbuffer::RingBuffer;
+    ///
+    /// let mut rb = AllocRingBuffer::with_capacity(4);
+    /// rb.extend_from_slice(&[1, 2, 3]);
+    /// assert_eq!(&rb.to_vec(), &[1, 2, 3]);
+    /// rb.extend_from_slice(&[4, 5, 6]);
+    /// assert_eq!(&rb.to_vec(), &[3, 4, 5, 6]);
+    ///
+    /// let mut rb = AllocRingBuffer::with_capacity(4);
+    /// rb.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+    /// assert_eq!(&rb.to_vec(), &[5, 6, 7, 8]);
+    /// ```
+    fn extend_from_slice(&mut self, src: &[T])
+    where
+        T: Copy,
+    {
+        unsafe { Self::ptr_extend_from_slice(self, src) }
+    }
 }
 
 mod iter {
@@ -688,6 +727,60 @@ macro_rules! impl_ringbuffer_ext {
                 }
                 .copy_from_slice(&src[size - from_idx..]);
             }
+        }
+
+        unsafe fn ptr_extend_from_slice(rb: *mut Self, src: &[T])
+        where
+            T: Copy,
+        {
+            let capacity = Self::ptr_capacity(rb);
+
+            if src.len() == 0 {
+                return;
+            }
+
+            let truncated_src = if src.len() > capacity {
+                &src[src.len() - capacity..]
+            } else {
+                src
+            };
+
+            let truncated_src_len = truncated_src.len();
+
+            let base: *mut T = $get_base_mut_ptr(rb);
+            let size = Self::ptr_buffer_size(rb);
+
+            let from_idx = $mask(size, (*rb).$writeptr);
+            let to_idx = $mask(size, (*rb).$writeptr + truncated_src_len);
+
+            if from_idx < to_idx {
+                unsafe {
+                    // SAFETY: index has been modulo-ed to be within range
+                    // to be within bounds
+                    core::slice::from_raw_parts_mut(base.add(from_idx), truncated_src_len)
+                }
+                .copy_from_slice(truncated_src);
+            } else {
+                unsafe {
+                    // SAFETY: index has been modulo-ed to be within range
+                    // to be within bounds
+                    core::slice::from_raw_parts_mut(base.add(from_idx), size - from_idx)
+                }
+                .copy_from_slice(&truncated_src[..size - from_idx]);
+                unsafe {
+                    // SAFETY: index has been modulo-ed to be within range
+                    // to be within bounds
+                    core::slice::from_raw_parts_mut(base, to_idx)
+                }
+                .copy_from_slice(&truncated_src[size - from_idx..]);
+            }
+
+
+            let initially_available = capacity - Self::ptr_len(rb);
+            if truncated_src_len > initially_available {
+                (*rb).$readptr += truncated_src_len - initially_available;
+            }
+            (*rb).$writeptr += truncated_src_len;
         }
     };
 }

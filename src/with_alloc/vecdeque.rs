@@ -317,6 +317,13 @@ unsafe impl<T> RingBuffer<T> for GrowableAllocRingBuffer<T> {
             back[offset - first_len..].copy_from_slice(src);
         }
     }
+
+    unsafe fn ptr_extend_from_slice(rb: *mut Self, src: &[T])
+    where
+        T: Copy,
+    {
+        (*rb).0.extend(src.iter());
+    }
 }
 
 impl<T> Extend<T> for GrowableAllocRingBuffer<T> {
