@@ -257,7 +257,7 @@ pub unsafe trait RingBuffer<T>:
     /// Efficiently copy items from the ringbuffer to a target slice.
     ///
     /// # Panics
-    /// Panics if the buffer length minus the offset is NOT equal to `target.len()`.
+    /// Panics if the buffer length minus the offset is NOT equal to `dst.len()`.
     ///
     /// # Safety
     /// ONLY SAFE WHEN self is a *const to to an implementor of `RingBuffer`
@@ -268,7 +268,7 @@ pub unsafe trait RingBuffer<T>:
     /// Efficiently copy items from the ringbuffer to a target slice.
     ///
     /// # Panics
-    /// Panics if the buffer length minus the offset is NOT equal to `target.len()`.
+    /// Panics if the buffer length minus the offset is NOT equal to `dst.len()`.
     fn copy_to_slice(&self, offset: usize, dst: &mut [T])
     where
         T: Copy,
