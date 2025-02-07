@@ -335,6 +335,44 @@ pub unsafe trait RingBuffer<T>:
     {
         unsafe { Self::ptr_extend_from_slice(self, src) }
     }
+
+    /// Efficiently drain the ringbuffer, transferring items to a slice.
+    ///
+    /// # Panics
+    /// Panics if the `dst.len()` is greater than the buffer length.
+    ///
+    /// # Safety
+    /// ONLY SAFE WHEN self is a *mut to to an implementor of `RingBuffer`
+    unsafe fn ptr_drain_to_slice(rb: *mut Self, dst: &mut [T])
+    where
+        T: Copy;
+
+    /// Efficiently drain the ringbuffer, transferring items to a slice.
+    ///
+    /// # Panics
+    /// Panics if the `dst.len()` is greater than the buffer length.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ringbuffer::AllocRingBuffer;
+    /// use crate::ringbuffer::RingBuffer;
+    ///
+    /// let mut slice = vec![0; 3];
+    /// let mut rb = AllocRingBuffer::from([1, 2, 3, 4]);
+    /// rb.drain_to_slice(&mut slice);
+    /// assert_eq!(&slice, &[1, 2, 3]);
+    /// assert_eq!(&rb.to_vec(), &[4]);
+    /// rb.drain_to_slice(&mut slice[..1]);
+    /// assert_eq!(&slice, &[4, 2, 3]);
+    /// assert_eq!(&rb.to_vec(), &[]);
+    /// ```
+    fn drain_to_slice(&mut self, dst: &mut [T])
+    where
+        T: Copy,
+    {
+        unsafe { Self::ptr_drain_to_slice(self, dst) }
+    }
 }
 
 mod iter {
@@ -781,6 +819,49 @@ macro_rules! impl_ringbuffer_ext {
                 (*rb).$readptr += truncated_src_len - initially_available;
             }
             (*rb).$writeptr += truncated_src_len;
+        }
+
+        unsafe fn ptr_drain_to_slice(rb: *mut Self, dst: &mut [T])
+        where
+            T: Copy,
+        {
+            let dst_len = dst.len();
+            let len = Self::ptr_len(rb);
+            assert!(
+                dst_len <= len,
+                "destination slice length ({dst_len}) greater than buffer length ({len})"
+            );
+
+            if dst_len == 0 {
+                return;
+            }
+
+            let base: *mut T = $get_base_mut_ptr(rb);
+            let size = Self::ptr_buffer_size(rb);
+
+            let from_idx = $mask(size, (*rb).$readptr);
+            let to_idx = $mask(size, (*rb).$readptr + dst_len);
+
+            if from_idx < to_idx {
+                dst.copy_from_slice(unsafe {
+                    // SAFETY: index has been modulo-ed to be within range
+                    // to be within bounds
+                    core::slice::from_raw_parts(base.add(from_idx), dst_len)
+                });
+            } else {
+                dst[..size - from_idx].copy_from_slice(unsafe {
+                    // SAFETY: index has been modulo-ed to be within range
+                    // to be within bounds
+                    core::slice::from_raw_parts(base.add(from_idx), size - from_idx)
+                });
+                dst[size - from_idx..].copy_from_slice(unsafe {
+                    // SAFETY: index has been modulo-ed to be within range
+                    // to be within bounds
+                    core::slice::from_raw_parts(base, to_idx)
+                });
+            }
+
+            (*rb).$readptr += dst_len;
         }
     };
 }

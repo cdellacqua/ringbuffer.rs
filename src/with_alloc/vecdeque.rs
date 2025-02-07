@@ -324,6 +324,24 @@ unsafe impl<T> RingBuffer<T> for GrowableAllocRingBuffer<T> {
     {
         (*rb).0.extend(src.iter());
     }
+
+    unsafe fn ptr_drain_to_slice(rb: *mut Self, dst: &mut [T])
+    where
+        T: Copy,
+    {
+        let dst_len = dst.len();
+        let len = Self::ptr_len(rb);
+        assert!(
+            dst_len <= len,
+            "destination slice length ({dst_len}) greater than buffer length ({len})"
+        );
+
+        dst.iter_mut()
+            .zip((*rb).0.drain(0..dst_len))
+            .for_each(|(dst, src)| {
+                *dst = src;
+            });
+    }
 }
 
 impl<T> Extend<T> for GrowableAllocRingBuffer<T> {
