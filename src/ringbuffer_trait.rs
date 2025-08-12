@@ -686,7 +686,7 @@ macro_rules! impl_ringbuffer_ext {
             let len = Self::ptr_len(rb);
             let dst_len = dst.len();
             assert!(
-                (offset == 0 && len == 0) || offset < len,
+                offset < len || (offset == len && dst_len == 0),
                 "offset ({offset}) is out of bounds for the current buffer length ({len})"
             );
             assert!(len - offset >= dst_len, "destination slice length ({dst_len}) greater than buffer length ({len}) when considering the specified offset ({offset})");
@@ -729,7 +729,7 @@ macro_rules! impl_ringbuffer_ext {
             let len = Self::ptr_len(rb);
             let src_len = src.len();
             assert!(
-                (offset == 0 && len == 0) || offset < len,
+                offset < len || (offset == len && src_len == 0),
                 "offset ({offset}) is out of bounds for the current buffer length ({len})"
             );
             assert!(len - offset >= src_len, "source slice length ({src_len}) greater than buffer length ({len}) when considering the specified offset ({offset})");
