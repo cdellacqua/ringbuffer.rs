@@ -1697,6 +1697,47 @@ mod tests {
     }
 
     #[test]
+    fn test_copy_from_slice_partial() {
+        macro_rules! test_concrete {
+            ($rb_init: expr) => {
+                let mut rb = $rb_init(&[3, 2, 1]);
+                assert_eq!(rb.capacity(), 7);
+                // we have some space left
+                assert!(rb.len() < rb.capacity());
+
+                // copy preserves length
+                rb.copy_from_slice(0, &[1, 2]);
+                assert_eq!(rb.to_vec(), alloc::vec![1, 2, 1]);
+
+                let _ = rb.enqueue(4);
+                let _ = rb.enqueue(5);
+                let _ = rb.enqueue(6);
+                assert_eq!(rb.to_vec(), alloc::vec![1, 2, 1, 4, 5, 6]);
+
+                // still preserving length
+                rb.copy_from_slice(1, &[5, 4, 3, 2, 1]);
+                assert_eq!(rb.to_vec(), alloc::vec![1, 5, 4, 3, 2, 1]);
+            };
+        }
+
+        test_concrete!(|values: &[i32]| {
+            let mut rb = ConstGenericRingBuffer::<_, 7>::new();
+            rb.extend(values.iter().copied());
+            rb
+        });
+        test_concrete!(|values: &[i32]| {
+            let mut rb = GrowableAllocRingBuffer::<_>::with_capacity(7);
+            rb.extend(values.iter().copied());
+            rb
+        });
+        test_concrete!(|values: &[i32]| {
+            let mut rb = AllocRingBuffer::<_>::new(7);
+            rb.extend(values.iter().copied());
+            rb
+        });
+    }
+
+    #[test]
     fn test_copy_from_slice_empty() {
         macro_rules! test_concrete {
             ($rb_init: expr) => {
@@ -1887,6 +1928,60 @@ mod tests {
                 let mut slice = [0; 6];
                 rb.copy_to_slice(0, &mut slice);
                 assert_eq!(slice.as_slice(), &[1, 2, 3, 4, 5, 6]);
+            };
+        }
+
+        test_concrete!(|values: &[i32]| {
+            let mut rb = ConstGenericRingBuffer::<_, 7>::new();
+            rb.extend(values.iter().copied());
+            rb
+        });
+        test_concrete!(|values: &[i32]| {
+            let mut rb = GrowableAllocRingBuffer::<_>::with_capacity(7);
+            rb.extend(values.iter().copied());
+            rb
+        });
+        test_concrete!(|values: &[i32]| {
+            let mut rb = AllocRingBuffer::<_>::new(7);
+            rb.extend(values.iter().copied());
+            rb
+        });
+    }
+
+    #[test]
+    fn test_copy_to_slice_partial() {
+        macro_rules! test_concrete {
+            ($rb_init: expr) => {
+                let mut rb = $rb_init(&[1, 2, 3]);
+                assert_eq!(rb.capacity(), 7);
+                // we have some space left
+                assert!(rb.len() < rb.capacity());
+
+                // copy based on length
+                let mut slice = [0; 2];
+                rb.copy_to_slice(0, &mut slice);
+                assert_eq!(slice.as_slice(), &[1, 2]);
+
+                let _ = rb.enqueue(4);
+                let _ = rb.enqueue(5);
+                let _ = rb.enqueue(6);
+                // still based on length
+                let mut slice = [0; 5];
+                rb.copy_to_slice(0, &mut slice);
+                assert_eq!(slice.as_slice(), &[1, 2, 3, 4, 5]);
+
+                // making sure the read/write ptrs have traversed the ring
+                for i in 0..6 {
+                    let _ = rb.enqueue(i + 1);
+                    let _ = rb.dequeue();
+                }
+
+                // sanity check
+                assert_eq!(rb.to_vec(), alloc::vec![1, 2, 3, 4, 5, 6]);
+                // copy again
+                let mut slice = [0; 5];
+                rb.copy_to_slice(1, &mut slice);
+                assert_eq!(slice.as_slice(), &[2, 3, 4, 5, 6]);
             };
         }
 
@@ -2125,6 +2220,20 @@ mod tests {
     }
 
     #[test]
+    fn test_extend_from_slice_partial() {
+        macro_rules! test_concrete {
+            ($rb_init: expr) => {
+                let mut rb = $rb_init();
+                rb.extend_from_slice(&[9; 2]);
+                assert_eq!(&rb.to_vec(), &[9, 9]);
+            };
+        }
+
+        test_concrete!(ConstGenericRingBuffer::<i32, 3>::new);
+        test_concrete!(|| AllocRingBuffer::<i32>::new(3));
+    }
+
+    #[test]
     fn test_extend_from_slice_empty() {
         macro_rules! test_concrete {
             ($rb_init: expr) => {
@@ -2219,6 +2328,32 @@ mod tests {
     }
 
     #[test]
+    fn test_drain_to_slice_partial() {
+        macro_rules! test_concrete {
+            ($rb_init: expr, $growable: expr) => {
+                let mut rb = $rb_init();
+                rb.extend_from_slice(&[9; 3]);
+                let mut slice = [0; 2];
+                rb.drain_to_slice(&mut slice);
+                assert_eq!(&slice, &[9; 2]);
+                rb.extend_from_slice(&[1, 2, 3]);
+                rb.drain_to_slice(&mut slice);
+                if $growable {
+                    assert_eq!(&slice, &[9, 1]);
+                    assert_eq!(&rb.to_vec(), &[2, 3]);
+                } else {
+                    assert_eq!(&slice, &[1, 2]);
+                    assert_eq!(&rb.to_vec(), &[3]);
+                }
+            };
+        }
+
+        test_concrete!(ConstGenericRingBuffer::<i32, 3>::new, false);
+        test_concrete!(|| GrowableAllocRingBuffer::<i32>::with_capacity(3), true);
+        test_concrete!(|| AllocRingBuffer::<i32>::new(3), false);
+    }
+
+    #[test]
     fn test_drain_to_slice_empty() {
         macro_rules! test_concrete {
             ($rb_init: expr) => {
@@ -2269,13 +2404,16 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "destination slice length (10) greater than buffer length (0)"]
     fn test_drain_to_slice_longer_than_len() {
         macro_rules! test_concrete {
             ($rb_init: expr) => {
                 let mut rb = $rb_init();
                 let mut slice = [0; 10];
                 rb.drain_to_slice(&mut slice);
+                assert_eq!(slice, [0; 10]);
+                rb.extend_from_slice(&[1, 2]);
+                rb.drain_to_slice(&mut slice);
+                assert_eq!(slice, [1, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
             };
         }
 
