@@ -339,9 +339,6 @@ pub unsafe trait RingBuffer<T>:
 
     /// Efficiently drain the ringbuffer, transferring items to a slice.
     ///
-    /// # Panics
-    /// Panics if the `dst.len()` is greater than the buffer length.
-    ///
     /// # Safety
     /// ONLY SAFE WHEN self is a *mut to to an implementor of `RingBuffer`
     unsafe fn ptr_drain_to_slice(rb: *mut Self, dst: &mut [T])
@@ -349,9 +346,6 @@ pub unsafe trait RingBuffer<T>:
         T: Copy;
 
     /// Efficiently drain the ringbuffer, transferring items to a slice.
-    ///
-    /// # Panics
-    /// Panics if the `dst.len()` is greater than the buffer length.
     ///
     /// # Examples
     ///
